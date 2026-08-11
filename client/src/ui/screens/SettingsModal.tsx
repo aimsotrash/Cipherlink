@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useSession } from '../SessionContext.js';
+import { Field } from '../components/Field.js';
 import type { DeviceInfo } from '@p2pchat/shared';
 
 type Tab = 'general' | 'privacy' | 'devices' | 'about';
@@ -190,14 +191,18 @@ function PrivacyTab(): JSX.Element {
       <div className="settings-section">
         <h3>Passphrase</h3>
         {message && <p className="notice">{message}</p>}
-        <label className="field">
-          <span>Current passphrase</span>
-          <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>New passphrase</span>
-          <input type="password" value={next} onChange={(e) => setNext(e.target.value)} />
-        </label>
+        <Field
+          label="Current passphrase"
+          type="password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+        />
+        <Field
+          label="New passphrase"
+          type="password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+        />
         <button
           className="secondary-button"
           disabled={!current || next.length < 10}

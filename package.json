@@ -21,7 +21,8 @@
     "test:watch": "vitest",
     "typecheck": "npm run build --workspaces --if-present",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:browser": "node tests/browser/smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

@@ -11,7 +11,8 @@ routes, signaling hub), plus adversarial testing.
 
 **Result:** no critical issues. Two high-severity, four medium and five
 low-severity issues were found. All high and medium issues, and three of the
-low, were fixed; each fix has a regression test. Remaining limitations are
+low, were fixed; each fix has a regression test. A real-browser smoke test
+added during the review found two further defects, recorded below. Remaining limitations are
 listed at the end.
 
 ---
@@ -237,6 +238,22 @@ Two defects found during test development are recorded in the commit history
 rather than here, because they were fixed before this review: log redaction did
 not match camelCase field names (so it was largely inert), and device
 identifiers did not survive a round trip through MLS group state.
+
+A real-browser smoke test (`tests/browser/smoke.mjs`), added while verifying
+the review, found two more that the Node suite structurally could not see:
+
+- **Form labels swallowed their help text into the accessible name**, so every
+  input announced as e.g. "Passphrase Unlocks the encrypted database on this
+  device. There is no recovery…". Fixed with a `Field` component that links
+  help text via `aria-describedby`.
+- **An invited user saw a raw UUID instead of a username**, because the joining
+  side has no contact record and the fix for M1 correctly stopped trusting the
+  server-asserted sender for identity. Fixed by resolving the name through a
+  public directory lookup by account id — the name is cosmetic and is not what
+  safety-number verification checks.
+
+`frame-ancestors` was also removed from the `<meta>` CSP, where browsers ignore
+it, and documented as requiring a response header.
 
 ---
 

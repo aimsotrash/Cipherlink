@@ -7,6 +7,7 @@
  */
 import { useState, type FormEvent } from 'react';
 import { useSession } from '../SessionContext.js';
+import { Field } from '../components/Field.js';
 
 export function RegistrationScreen(): JSX.Element {
   const { register, busy } = useSession();
@@ -52,57 +53,46 @@ export function RegistrationScreen(): JSX.Element {
 
         {error && <p className="form-error">{error}</p>}
 
-        <label className="field">
-          <span>Username</span>
-          <input
-            value={username}
-            onChange={(event) => setUsername(event.target.value.toLowerCase().trim())}
-            autoComplete="username"
-            autoCapitalize="none"
-            spellCheck={false}
-            required
-          />
-          <span className="hint">Visible to anyone who looks you up on this server.</span>
-        </label>
+        <Field
+          label="Username"
+          value={username}
+          onChange={(event) => setUsername(event.target.value.toLowerCase().trim())}
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          required
+          hint="Visible to anyone who looks you up on this server."
+        />
 
-        <label className="field">
-          <span>Passphrase</span>
-          <input
-            type="password"
-            value={passphrase}
-            onChange={(event) => setPassphrase(event.target.value)}
-            autoComplete={additionalDevice ? 'current-password' : 'new-password'}
-            required
-          />
-          <span className="hint">
-            Unlocks the encrypted database on this device. There is no recovery — if you forget it,
-            the messages stored here cannot be read by anyone, including us.
-          </span>
-        </label>
+        <Field
+          label="Passphrase"
+          type="password"
+          value={passphrase}
+          onChange={(event) => setPassphrase(event.target.value)}
+          autoComplete={additionalDevice ? 'current-password' : 'new-password'}
+          required
+          hint="Unlocks the encrypted database on this device. There is no recovery — if you forget it, the messages stored here cannot be read by anyone, including us."
+        />
 
         {!additionalDevice && (
-          <label className="field">
-            <span>Confirm passphrase</span>
-            <input
-              type="password"
-              value={confirm}
-              onChange={(event) => setConfirm(event.target.value)}
-              autoComplete="new-password"
-              required
-            />
-          </label>
-        )}
-
-        <label className="field">
-          <span>Device name</span>
-          <input
-            value={deviceLabel}
-            onChange={(event) => setDeviceLabel(event.target.value)}
-            maxLength={64}
+          <Field
+            label="Confirm passphrase"
+            type="password"
+            value={confirm}
+            onChange={(event) => setConfirm(event.target.value)}
+            autoComplete="new-password"
             required
           />
-          <span className="hint">Helps you recognise this device in your device list.</span>
-        </label>
+        )}
+
+        <Field
+          label="Device name"
+          value={deviceLabel}
+          onChange={(event) => setDeviceLabel(event.target.value)}
+          maxLength={64}
+          required
+          hint="Helps you recognise this device in your device list."
+        />
 
         <button className="primary-button" type="submit" disabled={busy}>
           {busy
@@ -157,17 +147,15 @@ export function UnlockScreen(): JSX.Element {
 
         {error && <p className="form-error">{error}</p>}
 
-        <label className="field">
-          <span>Passphrase</span>
-          <input
-            type="password"
-            value={passphrase}
-            onChange={(event) => setPassphrase(event.target.value)}
-            autoComplete="current-password"
-            autoFocus
-            required
-          />
-        </label>
+        <Field
+          label="Passphrase"
+          type="password"
+          value={passphrase}
+          onChange={(event) => setPassphrase(event.target.value)}
+          autoComplete="current-password"
+          autoFocus
+          required
+        />
 
         <button className="primary-button" type="submit" disabled={busy || !passphrase}>
           {busy ? 'Deriving key…' : 'Unlock'}

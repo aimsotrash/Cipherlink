@@ -8,6 +8,7 @@ import { ChatScreen } from './screens/ChatScreen.js';
 import { VerificationModal } from './screens/VerificationModal.js';
 import { SettingsModal } from './screens/SettingsModal.js';
 import { SignalingBadge, TrustBadge } from './components/Badges.js';
+import { Field } from './components/Field.js';
 import type { Conversation } from '../storage/models.js';
 
 export function App(): JSX.Element {
@@ -247,16 +248,14 @@ function NewConversationModal({
           confirm the safety number with them afterwards to be certain it is really them.
         </p>
         {error && <p className="form-error">{error}</p>}
-        <label className="field">
-          <span>Username</span>
-          <input
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            autoFocus
-            autoCapitalize="none"
-            spellCheck={false}
-          />
-        </label>
+        <Field
+          label="Username"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+          autoFocus
+          autoCapitalize="none"
+          spellCheck={false}
+        />
         <div className="modal-actions">
           <button className="secondary-button" onClick={onClose}>
             Cancel

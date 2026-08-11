@@ -251,6 +251,14 @@ export class ApiClient {
     return directoryEntrySchema.parse(body);
   }
 
+  /** Reverse lookup, for a conversation started by someone we do not know yet. */
+  async lookupUserById(userId: string): Promise<DirectoryEntry> {
+    const body = await this.request<unknown>(
+      `/api/v1/directory/by-id/${encodeURIComponent(userId)}`,
+    );
+    return directoryEntrySchema.parse(body);
+  }
+
   async listOwnDevices(): Promise<DeviceInfo[]> {
     const body = await this.request<unknown>('/api/v1/devices');
     return deviceListResponseSchema.parse(body).devices;

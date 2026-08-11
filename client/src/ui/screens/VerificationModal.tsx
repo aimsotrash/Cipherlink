@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { useSession } from '../SessionContext.js';
+import { Field } from '../components/Field.js';
 import {
   deriveSafetyNumber,
   qrPayloadMatches,
@@ -158,20 +159,16 @@ export function VerificationModal({
               <img src={device.qrDataUrl} alt="QR code encoding this conversation's safety number" />
             </div>
 
-            <label className="field" style={{ marginTop: 16 }}>
-              <span>Check their number</span>
-              <input
-                value={typed}
-                onChange={(event) => {
-                  setTyped(event.target.value);
-                  setCompareResult(null);
-                }}
-                placeholder="Paste their number or scanned QR contents"
-              />
-              <span className="hint">
-                Type or paste what {conversation.peerUsername} reads out, then compare.
-              </span>
-            </label>
+            <Field
+              label="Check their number"
+              value={typed}
+              onChange={(event) => {
+                setTyped(event.target.value);
+                setCompareResult(null);
+              }}
+              placeholder="Paste their number or scanned QR contents"
+              hint={`Type or paste what ${conversation.peerUsername} reads out, then compare.`}
+            />
             <button className="secondary-button" onClick={() => compare(device)}>
               Compare
             </button>

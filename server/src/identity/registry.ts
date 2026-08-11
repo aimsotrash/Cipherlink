@@ -305,6 +305,23 @@ export class Registry {
     );
   }
 
+  /**
+   * Reverse directory lookup, used when a conversation arrives from someone
+   * not yet in the local contact list. Returns the same public information as
+   * a lookup by username.
+   */
+  lookupByUserId(userId: string): { userId: string; username: string; devices: DeviceInfo[] } {
+    const account = this.db
+      .prepare('SELECT user_id, username FROM accounts WHERE user_id = ?')
+      .get(userId) as { user_id: string; username: string } | undefined;
+    if (!account) throw new RegistryError(404, 'unknown_user', 'no such user');
+    return {
+      userId: account.user_id,
+      username: account.username,
+      devices: this.listDevices(account.user_id),
+    };
+  }
+
   listDevices(userId: string): DeviceInfo[] {
     const rows = this.db
       .prepare(

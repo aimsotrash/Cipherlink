@@ -493,11 +493,24 @@ export class MessagingService {
       });
     }
 
-    // Resolve a display name; fall back to the raw id rather than inventing one.
+    // Resolve a display name: local contact first, then the public directory.
+    // The name is cosmetic — it is not what safety-number verification checks —
+    // so a failure here falls back to the raw id rather than blocking the join.
     let username = peerUserId;
     try {
       const contact = await this.options.repository.getContact(peerUserId);
-      if (contact) username = contact.username;
+      if (contact) {
+        username = contact.username;
+      } else {
+        const directory = await this.options.api.lookupUserById(peerUserId);
+        username = directory.username;
+        await this.options.repository.saveContact({
+          userId: directory.userId,
+          username: directory.username,
+          addedAt: this.now(),
+          deviceIds: directory.devices.map((device) => device.deviceId),
+        });
+      }
     } catch {
       /* name is cosmetic */
     }

@@ -541,7 +541,7 @@ select {
   margin-bottom: 14px;
 }
 
-.field span {
+.field label span {
   display: block;
   margin-bottom: 5px;
   font-size: 13px;

@@ -2,9 +2,8 @@
 
 ## Requirements
 
-- **Node 22 or newer.** The server runs TypeScript directly via
-  `--experimental-strip-types`, and the test suite relies on Node's global
-  `WebSocket` and `crypto.subtle`.
+- **Node 22 or newer.** The server runs TypeScript directly via `tsx`, and the
+  test suite relies on Node's global `WebSocket` and `crypto.subtle`.
 - No system dependencies beyond a C toolchain for `better-sqlite3`, which ships
   prebuilt binaries for common platforms.
 
@@ -29,7 +28,7 @@ IndexedDB.
 ## Commands
 
 ```bash
-npm test              # full suite (115 tests)
+npm test              # full suite (127 tests)
 npm run test:watch
 npm run typecheck     # every workspace
 npm run build         # production client bundle
@@ -46,6 +45,20 @@ npx vitest run tests/server        # registry, signaling hub
 npx vitest run tests/security      # adversarial server, logging, API auth
 npx vitest run tests/e2e           # full stack, real server
 ```
+
+### Real-browser smoke test
+
+Not part of `npm test`, because it needs Playwright and a running dev stack:
+
+```bash
+npm run dev            # terminal 1
+npm i -D playwright    # once
+npm run test:browser   # terminal 2
+```
+
+It registers two accounts in separate browser contexts, exchanges messages,
+and asserts both sides derive the same safety number. Worth running before any
+release: it exercises the WASM crypto path, which the Node suite does not.
 
 ## Project layout
 
@@ -146,6 +159,10 @@ This has not been deployed. Before it is:
 
 - **Terminate TLS properly** and set HSTS. The security model assumes an
   authenticated channel to the server.
+- **Send the Content-Security-Policy as a response header**, not only the
+  `<meta>` tag in `index.html`. `frame-ancestors` is ignored in a meta element,
+  so clickjacking protection needs the header. Narrow `connect-src` to your own
+  origins at the same time.
 - **Add an edge rate limiter.** The in-process token bucket in
   `server/src/rateLimit.ts` is per-instance and per-IP; it is not a substitute.
 - **Move blobs out of SQLite.** Attachments in a `BLOB` column will not scale;

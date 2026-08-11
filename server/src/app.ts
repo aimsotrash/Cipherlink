@@ -12,6 +12,7 @@
  *   GET  /api/v1/keypackages/count
  *   POST /api/v1/keypackages/claim    consumes one package per peer device
  *   GET  /api/v1/directory/:username  public device list
+ *   GET  /api/v1/directory/by-id/:id  same, by account id
  *   GET  /api/v1/devices              own device list
  *   DEL  /api/v1/devices/:id          revoke a device
  *   GET  /api/v1/ice                  STUN/TURN configuration
@@ -37,6 +38,7 @@ import {
   registerAccountRequestSchema,
   registerDeviceRequestSchema,
   usernameSchema,
+  uuidSchema,
   type Logger,
 } from '@p2pchat/shared';
 import { loadConfig, type ServerConfig } from './config.js';
@@ -259,6 +261,18 @@ export async function buildServer(
     }
     return registry.lookupByUsername(parsed.data);
   });
+
+  app.get(
+    '/api/v1/directory/by-id/:userId',
+    { preHandler: requireDevice },
+    async (request, reply) => {
+      const parsed = uuidSchema.safeParse((request.params as { userId: string }).userId);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: { code: 'bad_request', message: 'invalid user id' } });
+      }
+      return registry.lookupByUserId(parsed.data);
+    },
+  );
 
   app.get('/api/v1/devices', { preHandler: requireDevice }, async (request) => {
     return { devices: registry.listDevices(request.device!.userId) };
