@@ -1,11 +1,10 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "jsx": "react-jsx",
-    "types": ["vite/client", "node"],
+    "lib": ["ES2023"],
+    "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@corecrypto": ["../node_modules/@wireapp/core-crypto/dist/browser/corecrypto.d.ts"],
       "@p2pchat/shared": ["../shared/src/index.ts"]
     }
   },

@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node --experimental-strip-types --watch src/main.ts",
     "start": "node --experimental-strip-types src/main.ts",
-    "build": "tsc -b"
+    "build": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",
