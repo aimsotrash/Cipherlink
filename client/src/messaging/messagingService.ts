@@ -107,7 +107,7 @@ export class MessagingService {
     this.options.transport.onFrame.subscribe(({ from, frame, via }) => {
       void this.handleInboundFrame(from, frame, via).catch((error) => {
         this.logger.warn('failed to process inbound frame', {
-          frameType: frame.type,
+          kind: frame.type,
           reason: error instanceof Error ? error.name : 'unknown',
         });
       });
@@ -354,7 +354,7 @@ export class MessagingService {
       descriptors.push({ ...encrypted.secrets, blobId: uploaded.blobId });
       this.logger.info('attachment uploaded', {
         blobId: uploaded.blobId,
-        ciphertextBytes: encrypted.ciphertext.length,
+        bytes: encrypted.ciphertext.length,
       });
     }
     return descriptors;
@@ -430,6 +430,12 @@ export class MessagingService {
   private async handleWelcome(from: PeerAddress, payload: string): Promise<void> {
     const conversationId = await this.options.engine.joinFromWelcome(fromBase64(payload));
     await this.recordMemberIdentities(conversationId);
+
+    // Start reaching every member directly, so replies do not have to take the
+    // relay path the Welcome arrived on.
+    for (const member of this.routing.get(conversationId) ?? []) {
+      this.options.transport.warmUp(member);
+    }
 
     const existing = await this.options.repository.getConversation(conversationId);
     if (existing) return;

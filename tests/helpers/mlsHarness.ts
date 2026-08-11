@@ -54,7 +54,7 @@ export async function createTestClient(
 ): Promise<TestClient> {
   const address: MlsClientAddress = {
     userId: options.userId ?? randomUUID(),
-    deviceId: options.deviceId ?? (deviceCounter++).toString(16),
+    deviceId: options.deviceId ?? (deviceCounter++).toString(16).padStart(16, "0"),
   };
   const outbox: OutboundCommitBundle[] = [];
 

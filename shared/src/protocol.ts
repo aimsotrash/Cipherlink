@@ -16,9 +16,17 @@ const base64 = (maxEncodedLength: number) =>
     .regex(/^[A-Za-z0-9+/\-_]*={0,2}$/, 'expected base64');
 
 export const uuidSchema = z.string().uuid();
+/**
+ * Device identifiers are exactly 16 lowercase hex characters (a 64-bit value).
+ *
+ * The width is fixed rather than variable because MLS renders the same id as a
+ * zero-padded 16-character string; accepting a shorter form would mean the id
+ * the server issued and the id read back out of group state were different
+ * strings for the same device.
+ */
 export const deviceIdSchema = z
   .string()
-  .regex(/^[0-9a-f]{1,16}$/, 'device id must be lowercase hex');
+  .regex(/^[0-9a-f]{16}$/, 'device id must be 16 lowercase hex characters');
 export const usernameSchema = z
   .string()
   .min(3)

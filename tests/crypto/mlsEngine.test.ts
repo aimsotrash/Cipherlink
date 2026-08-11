@@ -7,6 +7,7 @@ import {
   establishConversation,
   exchange,
 } from '../helpers/mlsHarness.js';
+import { flipBitAt } from '../helpers/tamper.js';
 
 describe('MLS session engine', () => {
   it('establishes a session and round-trips a message', async () => {
@@ -51,8 +52,7 @@ describe('MLS session engine', () => {
     );
 
     // Flip a bit in the AEAD-protected region.
-    const tampered = Uint8Array.from(ciphertext);
-    tampered[tampered.length - 4] ^= 0x01;
+    const tampered = flipBitAt(ciphertext, -4);
 
     await expect(bob.engine.decrypt(conversationId, tampered)).rejects.toBeInstanceOf(
       MlsEngineError,

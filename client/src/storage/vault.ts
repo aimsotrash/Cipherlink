@@ -45,9 +45,14 @@ export const DEFAULT_ARGON2_PARAMS: Argon2Params = {
   parallelism: 1,
 };
 
-/** Reduced cost for automated tests only. Never used at runtime. */
+/**
+ * Reduced cost for automated tests only. Never used at runtime.
+ *
+ * Still at the protocol's minimum accepted strength (8 MiB / t=1) rather than
+ * below it, so tests exercise the same validation path real clients do.
+ */
 export const TEST_ARGON2_PARAMS: Argon2Params = {
-  memoryKiB: 1024,
+  memoryKiB: 8192,
   iterations: 1,
   parallelism: 1,
 };

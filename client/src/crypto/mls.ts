@@ -259,7 +259,7 @@ export class MlsEngine {
 
     if (existing.length > 0) {
       credentialRef = existing[0];
-      logger.info('reused existing device credential', { credentialCount: existing.length });
+      logger.info('reused existing device credential', { count: existing.length });
     } else {
       const credential = api.Credential.basic(MLS_CIPHERSUITE, clientId);
       await cc.transaction(async (ctx: CoreCryptoContext) => {
@@ -554,16 +554,22 @@ export class MlsEngine {
   }
 }
 
-/** core-crypto returns device ids as u64; our wire format is lowercase hex. */
+/**
+ * Render a core-crypto `DeviceId` as our canonical 16-character hex string.
+ *
+ * `DeviceId` wraps a u64 and exposes `toHexString()` for exactly this; the
+ * other branches are defensive fallbacks so a binding change degrades into a
+ * wrong-looking id rather than an exception on the message path.
+ */
 function normaliseDeviceId(value: unknown): string {
-  if (typeof value === 'bigint') return value.toString(16);
-  if (typeof value === 'number') return Math.trunc(value).toString(16);
-  if (typeof value === 'string') return value.toLowerCase().replace(/^0x/, '');
-  if (value && typeof value === 'object') {
-    const maybe = value as { toString(): string };
-    const text = maybe.toString();
-    if (/^\d+$/.test(text)) return BigInt(text).toString(16);
-    return text.toLowerCase().replace(/^0x/, '');
+  if (value && typeof value === 'object' && 'toHexString' in value) {
+    const hex = (value as { toHexString(): string }).toHexString();
+    if (typeof hex === 'string') return hex.toLowerCase();
+  }
+  if (typeof value === 'bigint') return value.toString(16).padStart(16, '0');
+  if (typeof value === 'number') return Math.trunc(value).toString(16).padStart(16, '0');
+  if (typeof value === 'string') {
+    return value.toLowerCase().replace(/^0x/, '').padStart(16, '0');
   }
   return '';
 }

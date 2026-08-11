@@ -6,7 +6,7 @@
  * review. Two mechanisms enforce that:
  *
  *  1. Field names matching {@link SENSITIVE_KEY_PATTERN} are replaced with
- *     `[redacted]` regardless of what the caller passed.
+ *     are replaced with `[redacted]` regardless of what the caller passed.
  *  2. Raw binary (`Uint8Array`/`ArrayBuffer`) is never rendered. Byte arrays
  *     are the shape every key, nonce and ciphertext takes in this codebase, so
  *     they are summarised as `<bytes:N>` — length only.
@@ -21,11 +21,65 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 const LEVEL_ORDER: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
 /**
- * Field names whose values are always redacted. Deliberately broad: a false
- * positive costs a debugging session, a false negative costs a user's privacy.
+ * Words that make a field's value secret. Deliberately broad: a false positive
+ * costs a debugging session, a false negative costs a user's privacy.
  */
-export const SENSITIVE_KEY_PATTERN =
-  /(^|_|\.|-)(key|keys|secret|secrets|token|password|passphrase|proof|seed|nonce|iv|plaintext|body|text|message|content|payload|ciphertext|signature|credential|salt|digest|sdp|candidate)($|_|\.|-)/i;
+const SENSITIVE_TOKENS = new Set([
+  'key',
+  'keys',
+  'secret',
+  'secrets',
+  'token',
+  'tokens',
+  'password',
+  'passwords',
+  'passphrase',
+  'proof',
+  'seed',
+  'nonce',
+  'iv',
+  'plaintext',
+  'body',
+  'text',
+  'message',
+  'content',
+  'payload',
+  'ciphertext',
+  'signature',
+  'credential',
+  'credentials',
+  'salt',
+  'digest',
+  'sdp',
+  'candidate',
+  'frame',
+]);
+
+/**
+ * Split an identifier into lowercase words, handling camelCase, snake_case,
+ * kebab-case and dotted paths alike.
+ *
+ * Getting this wrong is not a cosmetic issue: an earlier version only matched
+ * separator-delimited words, which silently failed to redact `privateKey` and
+ * every other camelCase field in a codebase written entirely in camelCase.
+ */
+function tokenizeFieldName(field: string): string[] {
+  return field
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .map((token) => token.toLowerCase())
+    .filter(Boolean);
+}
+
+export function isSensitiveFieldName(field: string): boolean {
+  return tokenizeFieldName(field).some((token) => SENSITIVE_TOKENS.has(token));
+}
+
+/** @deprecated Kept for compatibility; prefer {@link isSensitiveFieldName}. */
+export const SENSITIVE_KEY_PATTERN = {
+  test: (field: string): boolean => isSensitiveFieldName(field),
+};
 
 export const REDACTED = '[redacted]';
 
@@ -107,7 +161,7 @@ export function sanitiseValue(value: unknown, depth = 0, seen = new WeakSet<obje
 
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = SENSITIVE_KEY_PATTERN.test(key) ? REDACTED : sanitiseValue(item, depth + 1, seen);
+      out[key] = isSensitiveFieldName(key) ? REDACTED : sanitiseValue(item, depth + 1, seen);
     }
     return out;
   }
@@ -120,7 +174,7 @@ export function sanitiseFields(fields: LogFields | undefined): Record<string, un
   if (!fields) return {};
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fields)) {
-    out[key] = SENSITIVE_KEY_PATTERN.test(key) ? REDACTED : sanitiseValue(value);
+    out[key] = isSensitiveFieldName(key) ? REDACTED : sanitiseValue(value);
   }
   return out;
 }

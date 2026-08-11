@@ -77,7 +77,11 @@ export class TransportManager {
 
   /** Deliver a relay envelope that the signaling client received. */
   deliverRelayFrame(from: PeerAddress, frame: TransportFrame): void {
-    this.link(from).acceptRelayFrame(frame);
+    const link = this.link(from);
+    link.acceptRelayFrame(frame);
+    // A peer that just relayed to us is a peer worth reaching directly: start
+    // (or resume) negotiation so the conversation upgrades off the relay.
+    link.connect();
   }
 
   statusFor(peer: PeerAddress): PeerLinkStatus | undefined {

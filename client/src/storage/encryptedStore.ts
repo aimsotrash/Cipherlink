@@ -80,7 +80,7 @@ export class EncryptedStore {
       plaintext = await this.getRaw(recordKey);
     } catch (error) {
       if (error instanceof AuthenticationError) {
-        this.logger.error('stored record failed authentication', { recordKey });
+        this.logger.error('stored record failed authentication', { record: recordKey });
         return undefined;
       }
       throw error;
@@ -89,7 +89,7 @@ export class EncryptedStore {
     try {
       return JSON.parse(new TextDecoder().decode(plaintext)) as T;
     } catch {
-      this.logger.error('stored record is not valid JSON', { recordKey });
+      this.logger.error('stored record is not valid JSON', { record: recordKey });
       return undefined;
     }
   }

@@ -178,9 +178,10 @@ export class Registry {
   }
 
   private newDeviceId(): string {
-    // 48 bits is ample for per-account uniqueness and fits the u64 MLS device
-    // id without needing BigInt gymnastics on the client.
-    return randomBytes(6).toString('hex');
+    // 64 bits, rendered as 16 hex characters: the exact width MLS uses for a
+    // device id, so the identifier survives a round trip through group state
+    // unchanged.
+    return randomBytes(8).toString('hex');
   }
 
   // -- device authentication ------------------------------------------------
