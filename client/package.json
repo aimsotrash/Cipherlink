@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "stage:wasm": "node scripts/stage-wasm.mjs",
+    "predev": "npm run stage:wasm",
     "dev": "vite",
+    "prebuild": "npm run stage:wasm",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },

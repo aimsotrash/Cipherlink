@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!--
+      A strict CSP is part of the security posture, not decoration: the local
+      vault key lives in this origin's JavaScript memory while unlocked, so
+      script injection is the most damaging client-side failure available.
+      'wasm-unsafe-eval' is required to instantiate the core-crypto WASM module.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss: http: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Cipherlink — private messaging</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>Cipherlink needs JavaScript to encrypt and decrypt messages locally.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
