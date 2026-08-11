@@ -296,6 +296,15 @@ export class Registry {
     };
   }
 
+  /** Whether a device is registered. Used to refuse routing to nowhere. */
+  deviceExists(userId: string, deviceId: string): boolean {
+    return (
+      this.db
+        .prepare('SELECT 1 FROM devices WHERE user_id = ? AND device_id = ?')
+        .get(userId, deviceId) !== undefined
+    );
+  }
+
   listDevices(userId: string): DeviceInfo[] {
     const rows = this.db
       .prepare(

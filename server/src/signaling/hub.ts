@@ -32,10 +32,24 @@ interface Connection {
   presenceInterest: Set<string>;
   /** Guards against unauthenticated flooding before `auth` arrives. */
   preAuthMessages: number;
+  /** Token bucket limiting how fast this socket may send. */
+  budget: number;
+  budgetUpdatedAt: number;
 }
 
 const MAX_PREAUTH_MESSAGES = 4;
 const RELAY_BATCH = 50;
+
+/**
+ * Per-socket message allowance.
+ *
+ * Without this, one authenticated client can flood the hub with signaling or
+ * relay traffic aimed at another device. The burst is generous enough for a
+ * normal client resuming a large queue, and the refill rate is well above
+ * interactive use.
+ */
+const SOCKET_BURST = 120;
+const SOCKET_REFILL_PER_SECOND = 20;
 
 export class SignalingHub {
   private readonly connections = new Map<HubSocket, Connection>();
@@ -46,6 +60,7 @@ export class SignalingHub {
     private readonly registry: Registry,
     private readonly relayQueue: RelayQueue,
     private readonly logger: Logger,
+    private readonly now: () => number = Date.now,
   ) {}
 
   open(socket: HubSocket): void {
@@ -54,7 +69,23 @@ export class SignalingHub {
       device: null,
       presenceInterest: new Set(),
       preAuthMessages: 0,
+      budget: SOCKET_BURST,
+      budgetUpdatedAt: this.now(),
     });
+  }
+
+  /** Consume one unit of the socket's allowance. */
+  private withinBudget(connection: Connection): boolean {
+    const now = this.now();
+    const elapsedSeconds = (now - connection.budgetUpdatedAt) / 1000;
+    connection.budget = Math.min(
+      SOCKET_BURST,
+      connection.budget + elapsedSeconds * SOCKET_REFILL_PER_SECOND,
+    );
+    connection.budgetUpdatedAt = now;
+    if (connection.budget < 1) return false;
+    connection.budget -= 1;
+    return true;
   }
 
   close(socket: HubSocket): void {
@@ -75,6 +106,15 @@ export class SignalingHub {
   handleMessage(socket: HubSocket, raw: string): void {
     const connection = this.connections.get(socket);
     if (!connection) return;
+
+    if (!this.withinBudget(connection)) {
+      this.sendTo(connection, {
+        type: 'error',
+        code: 'rate_limited',
+        message: 'too many messages',
+      });
+      return;
+    }
 
     let message: ClientToServerMessage;
     try {
@@ -205,6 +245,18 @@ export class SignalingHub {
     connection: Connection,
     message: Extract<ClientToServerMessage, { type: 'relay.send' }>,
   ): void {
+    // Refuse to queue for a device that does not exist. Without this a client
+    // could invent unlimited recipient addresses and grow the queue without
+    // bound, since the depth limit is per recipient device.
+    if (!this.registry.deviceExists(message.to.userId, message.to.deviceId)) {
+      this.sendTo(connection, {
+        type: 'error',
+        code: 'unknown_device',
+        message: 'no such recipient device',
+      });
+      return;
+    }
+
     const frame = Buffer.from(message.frame, 'base64');
     const id = this.relayQueue.enqueue({
       to: message.to,

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { toBase64, fromBase64, type AttachmentDescriptor } from '@p2pchat/shared';
-import { decryptAttachment, encryptAttachment } from '../../client/src/crypto/attachments.js';
+import {
+  decryptAttachment,
+  encryptAttachment,
+  safeFilename,
+} from '../../client/src/crypto/attachments.js';
 import { AuthenticationError, generateAesKey } from '../../client/src/crypto/aead.js';
 import { flipBitAt } from '../helpers/tamper.js';
 
@@ -102,5 +106,33 @@ describe('attachment encryption', () => {
   it('refuses an attachment over the size limit', async () => {
     const huge = new Uint8Array(33 * 1024 * 1024);
     await expect(encryptAttachment(huge, META)).rejects.toThrow(/limit is/);
+  });
+});
+
+describe('filename sanitisation', () => {
+  it('strips path components from a peer-supplied name', () => {
+    expect(safeFilename('../../.bashrc')).toBe('bashrc');
+    expect(safeFilename('/etc/passwd')).toBe('passwd');
+    expect(safeFilename('C:\\Windows\\system32\\drivers\\etc\\hosts')).toBe('hosts');
+  });
+
+  it('strips control characters used to disguise an extension', () => {
+    expect(safeFilename('invoice\u202e' + 'gpj.exe')).not.toContain('\u0000');
+    expect(safeFilename('report\u0000.pdf')).toBe('report.pdf');
+    expect(safeFilename('a\u001fb.txt')).toBe('ab.txt');
+  });
+
+  it('falls back rather than producing an empty name', () => {
+    expect(safeFilename('')).toBe('attachment');
+    expect(safeFilename('...')).toBe('attachment');
+    expect(safeFilename('/')).toBe('attachment');
+  });
+
+  it('caps absurdly long names', () => {
+    expect(safeFilename('x'.repeat(5000)).length).toBe(200);
+  });
+
+  it('leaves an ordinary name untouched', () => {
+    expect(safeFilename('Quarterly Report (final).pdf')).toBe('Quarterly Report (final).pdf');
   });
 });

@@ -28,8 +28,6 @@ import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import { ZodError } from 'zod';
 import {
-  MAX_ATTACHMENT_BYTES,
-  TARGET_KEY_PACKAGE_COUNT,
   authChallengeRequestSchema,
   authVerifyRequestSchema,
   claimKeyPackagesRequestSchema,
@@ -86,7 +84,9 @@ export async function buildServer(
   const app = Fastify({
     logger: false,
     trustProxy: config.trustProxy,
-    bodyLimit: MAX_ATTACHMENT_BYTES + 1024,
+    // Small by default: only the blob upload route raises its own limit, so a
+    // multi-megabyte body cannot be aimed at a JSON endpoint.
+    bodyLimit: 256 * 1024,
   });
 
   await app.register(cors, {
@@ -279,20 +279,26 @@ export async function buildServer(
 
   // -- encrypted blobs ------------------------------------------------------
 
-  app.post('/api/v1/blobs', { preHandler: requireDevice }, async (request, reply) => {
-    const body = request.body;
-    if (!Buffer.isBuffer(body) || body.length === 0) {
-      return reply
-        .code(400)
-        .send({ error: { code: 'bad_request', message: 'expected a binary body' } });
-    }
-    if (body.length > config.maxBlobBytes) {
-      return reply.code(413).send({ error: { code: 'too_large', message: 'attachment too large' } });
-    }
-    const stored = blobs.put(request.device!.userId, body);
-    logger.info('encrypted blob stored', { bytes: body.length });
-    return reply.code(201).send(stored);
-  });
+  app.post(
+    '/api/v1/blobs',
+    { preHandler: requireDevice, bodyLimit: config.maxBlobBytes + 1024 },
+    async (request, reply) => {
+      const body = request.body;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        return reply
+          .code(400)
+          .send({ error: { code: 'bad_request', message: 'expected a binary body' } });
+      }
+      if (body.length > config.maxBlobBytes) {
+        return reply
+          .code(413)
+          .send({ error: { code: 'too_large', message: 'attachment too large' } });
+      }
+      const stored = blobs.put(request.device!.userId, body);
+      logger.info('encrypted blob stored', { bytes: body.length });
+      return reply.code(201).send(stored);
+    },
+  );
 
   app.get('/api/v1/blobs/:blobId', { preHandler: requireDevice }, async (request, reply) => {
     const { blobId } = request.params as { blobId: string };
@@ -335,8 +341,6 @@ export async function buildServer(
 
   return { app, db, registry, relayQueue, blobs, hub, config };
 }
-
-export { TARGET_KEY_PACKAGE_COUNT };
 
 function clientIp(request: FastifyRequest): string {
   return request.ip || 'unknown';

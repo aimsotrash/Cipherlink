@@ -42,7 +42,13 @@ export type WebSocketConstructor = new (url: string) => WebSocketLike;
 
 export interface SignalingClientOptions {
   readonly url: string;
-  readonly getToken: () => string | null;
+  /**
+   * Produce a currently-valid session token, refreshing it if necessary.
+   *
+   * Called before every connection attempt, so an expired token results in a
+   * re-authentication rather than a socket that reconnects forever.
+   */
+  readonly getToken: () => Promise<string | null>;
   readonly logger?: Logger;
   readonly webSocketConstructor?: WebSocketConstructor;
   /** Backoff schedule for reconnection, in milliseconds. */
@@ -68,6 +74,8 @@ export class SignalingClient {
   }>();
 
   private socket: WebSocketLike | null = null;
+  /** Guards against two concurrent token fetches racing into two sockets. */
+  private opening = false;
   private state: SignalingState = 'closed';
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -122,14 +130,30 @@ export class SignalingClient {
   }
 
   private openSocket(): void {
-    if (this.stopped || this.socket) return;
-    const token = this.options.getToken();
-    if (!token) {
-      this.logger.warn('cannot connect without a session token');
-      this.scheduleReconnect();
-      return;
-    }
+    if (this.stopped || this.socket || this.opening) return;
+    this.opening = true;
+    void this.options
+      .getToken()
+      .then((token) => {
+        this.opening = false;
+        if (this.stopped || this.socket) return;
+        if (!token) {
+          this.logger.warn('cannot connect without a session token');
+          this.scheduleReconnect();
+          return;
+        }
+        this.openSocketWithToken(token);
+      })
+      .catch((error: unknown) => {
+        this.opening = false;
+        this.logger.warn('could not obtain a session token', {
+          reason: error instanceof Error ? error.name : 'unknown',
+        });
+        this.scheduleReconnect();
+      });
+  }
 
+  private openSocketWithToken(token: string): void {
     this.setState('connecting');
     let socket: WebSocketLike;
     try {

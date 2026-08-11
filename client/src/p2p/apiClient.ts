@@ -48,6 +48,9 @@ export interface AuthSession {
 
 export class ApiClient {
   private session: AuthSession | null = null;
+  private onUnauthorized: (() => Promise<void>) | null = null;
+  /** Ensures concurrent 401s trigger one re-authentication, not several. */
+  private reauthInFlight: Promise<void> | null = null;
 
   constructor(
     private readonly baseUrl: string,
@@ -62,9 +65,28 @@ export class ApiClient {
     this.session = session;
   }
 
+  /**
+   * Register a callback that re-authenticates the device.
+   *
+   * Without this, a token that expires or is revoked mid-session leaves the
+   * client permanently unable to reach the server until it is restarted.
+   */
+  setUnauthorizedHandler(handler: (() => Promise<void>) | null): void {
+    this.onUnauthorized = handler;
+  }
+
+  private async reauthenticate(): Promise<void> {
+    if (!this.onUnauthorized) throw new ApiError(401, 'unauthenticated', 'session expired');
+    this.reauthInFlight ??= this.onUnauthorized().finally(() => {
+      this.reauthInFlight = null;
+    });
+    await this.reauthInFlight;
+  }
+
   private async request<T>(
     path: string,
     init: RequestInit & { authenticated?: boolean } = {},
+    retryOnUnauthorized = true,
   ): Promise<T> {
     const headers = new Headers(init.headers);
     if (init.body && !headers.has('content-type')) {
@@ -79,6 +101,17 @@ export class ApiClient {
     const parsed: unknown = text ? safeJsonParse(text) : undefined;
 
     if (!response.ok) {
+      // One retry, and only for authenticated calls, so a genuinely rejected
+      // credential cannot become an infinite re-authentication loop.
+      if (
+        response.status === 401 &&
+        retryOnUnauthorized &&
+        init.authenticated !== false &&
+        this.onUnauthorized
+      ) {
+        await this.reauthenticate();
+        return this.request<T>(path, init, false);
+      }
       const error = (parsed as { error?: { code?: string; message?: string } } | undefined)?.error;
       throw new ApiError(
         response.status,

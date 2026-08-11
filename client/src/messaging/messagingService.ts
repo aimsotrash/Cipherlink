@@ -229,6 +229,47 @@ export class MessagingService {
     return conversation;
   }
 
+  /**
+   * Bring a contact's newly registered devices into an existing conversation.
+   *
+   * `pendingAdds` must be set around the call: the Welcome produced by the Add
+   * commit is routed to exactly those devices, while the commit itself goes to
+   * the members who were already in the group.
+   */
+  async addDevicesToConversation(conversationId: string, userId: string): Promise<number> {
+    const known = new Set(
+      (this.routing.get(conversationId) ?? []).map((member) => addressKey(member)),
+    );
+    const claimed = await this.options.api.claimKeyPackages(userId);
+    const fresh = claimed.keyPackages.filter(
+      (entry) => !known.has(addressKey({ userId, deviceId: entry.deviceId })),
+    );
+    if (fresh.length === 0) return 0;
+
+    const newMembers: PeerAddress[] = fresh.map((entry) => ({
+      userId,
+      deviceId: entry.deviceId,
+    }));
+
+    this.pendingAdds = { conversationId, members: newMembers };
+    try {
+      await this.options.engine.addMembers(
+        conversationId,
+        fresh.map((entry) => fromBase64(entry.keyPackage)),
+      );
+    } finally {
+      this.pendingAdds = null;
+    }
+
+    await this.recordMemberIdentities(conversationId);
+    for (const member of newMembers) this.options.transport.warmUp(member);
+    this.logger.info('added devices to conversation', {
+      conversationId,
+      added: newMembers.length,
+    });
+    return newMembers.length;
+  }
+
   private async membersOf(conversationId: string): Promise<PeerAddress[]> {
     try {
       const members = await this.options.engine.members(conversationId);
@@ -440,10 +481,22 @@ export class MessagingService {
     const existing = await this.options.repository.getConversation(conversationId);
     if (existing) return;
 
+    // Take the peer's identity from the MLS group state, not from the frame's
+    // sender address. The sender address is asserted by the server, so trusting
+    // it would let a hostile server label a conversation with the wrong
+    // contact's name while the actual group member is someone else.
+    const members = this.routing.get(conversationId) ?? [];
+    const peerUserId = members[0]?.userId ?? from.userId;
+    if (!members.some((member) => member.userId === from.userId)) {
+      this.logger.warn('welcome sender is not a member of the group it invited us to', {
+        conversationId,
+      });
+    }
+
     // Resolve a display name; fall back to the raw id rather than inventing one.
-    let username = from.userId;
+    let username = peerUserId;
     try {
-      const contact = await this.options.repository.getContact(from.userId);
+      const contact = await this.options.repository.getContact(peerUserId);
       if (contact) username = contact.username;
     } catch {
       /* name is cosmetic */
@@ -451,7 +504,7 @@ export class MessagingService {
 
     const conversation: Conversation = {
       id: conversationId,
-      peerUserId: from.userId,
+      peerUserId,
       peerUsername: username,
       createdAt: this.now(),
       lastActivityAt: this.now(),
@@ -686,10 +739,24 @@ export class MessagingService {
     return updated;
   }
 
-  /** Send a non-user-visible control payload through the same encrypted channel. */
+  /**
+   * Send a non-user-visible control payload through the same encrypted channel.
+   *
+   * Receipts and typing indicators are held by the same identity-change block
+   * as ordinary messages. A delivery receipt sent to a device whose key just
+   * changed would confirm to a possible man-in-the-middle that their message
+   * landed, which is exactly the signal the block exists to withhold.
+   */
   private async sendControl(conversationId: string, payload: AppPayload): Promise<void> {
     const members = this.routing.get(conversationId) ?? [];
     if (members.length === 0) return;
+
+    const blockOnChange = this.options.settings().blockOnIdentityChange;
+    if (members.some((member) => this.options.trustStore.isSendBlocked(member, blockOnChange))) {
+      this.logger.debug('withheld a control message from a changed identity', { conversationId });
+      return;
+    }
+
     try {
       const ciphertext = await this.options.engine.encrypt(
         conversationId,

@@ -99,10 +99,13 @@ export class WebRtcChannelFactory implements DirectChannelFactory {
 
   async connect(options: DirectChannelConnectOptions): Promise<DirectChannel> {
     const PeerConnection = this.constructPeerConnection();
+    // Always 'all': WebRTC offers no "everything except relay" policy, and
+    // 'relay' would *force* TURN — the opposite of what directOnly wants. The
+    // direct-only guarantee is enforced instead by dropping our own relay
+    // candidates and by re-checking the selected pair after connecting.
     const connection = new PeerConnection({
       iceServers: options.iceServers,
-      // 'relay' would force TURN; we want the opposite when directOnly is set.
-      iceTransportPolicy: options.directOnly ? 'all' : 'all',
+      iceTransportPolicy: 'all',
     });
 
     const disposers: Array<() => void> = [];

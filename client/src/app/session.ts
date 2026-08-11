@@ -70,6 +70,9 @@ export interface DeviceRecord {
 
 const DEVICE_RECORD_KEY = 'p2pchat.device.v1';
 
+/** Refresh a session token this long before it expires. */
+const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
 export interface SessionConfig {
   readonly apiBaseUrl: string;
   readonly wsUrl: string;
@@ -308,29 +311,58 @@ export class AppSession {
       throw new SessionError('login-failed', 'device authentication key is missing');
     }
 
+    wipe(devicePrivateKey);
+
+    /**
+     * Authenticate (or re-authenticate) this device.
+     *
+     * The private key is re-read from the encrypted store each time rather
+     * than being held in a long-lived copy, so it exists in memory only for
+     * the moment it is used to sign a challenge.
+     */
+    const authenticate = async (): Promise<void> => {
+      const key = await repository.getSecretBytes('device-auth-key');
+      if (!key) throw new SessionError('login-failed', 'device authentication key is missing');
+      try {
+        await api.login({
+          userId: profile.userId,
+          deviceId: profile.deviceId,
+          devicePrivateKey: key,
+        });
+      } finally {
+        wipe(key);
+      }
+    };
+
+    /** A token that is valid now, refreshing shortly before it expires. */
+    const currentToken = async (): Promise<string | null> => {
+      const existing = api.currentSession;
+      if (!existing || existing.expiresAt - Date.now() < TOKEN_REFRESH_MARGIN_MS) {
+        await authenticate();
+      }
+      return api.currentSession?.token ?? null;
+    };
+
     try {
-      await api.login({
-        userId: profile.userId,
-        deviceId: profile.deviceId,
-        devicePrivateKey,
-      });
+      await authenticate();
     } catch (error) {
-      wipe(devicePrivateKey);
       throw new SessionError(
         'login-failed',
         error instanceof Error ? error.message : 'could not authenticate this device',
       );
     }
-    // Keep a copy for re-authentication after token expiry, then scrub ours.
-    const deviceKeyCopy = Uint8Array.from(devicePrivateKey);
-    wipe(devicePrivateKey);
+
+    // Recover from a token the server rejected (revoked, or expired early).
+    api.setUnauthorizedHandler(async () => {
+      await authenticate();
+    });
 
     const trustStore = new TrustStore(repository.trustPersistence());
     await trustStore.load();
 
     const signaling = new SignalingClient({
       url: this.config.wsUrl,
-      getToken: () => api.currentSession?.token ?? null,
+      getToken: currentToken,
       logger: this.logger,
     });
 
@@ -409,7 +441,6 @@ export class AppSession {
     };
     this.ready = ready;
     this.phase = 'ready';
-    wipe(deviceKeyCopy);
 
     await this.replenishKeyPackages(ready);
     this.scheduleAutoLock();

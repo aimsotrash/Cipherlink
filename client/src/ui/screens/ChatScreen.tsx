@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { AttachmentDescriptor } from '@p2pchat/shared';
 import { useSession } from '../SessionContext.js';
+import { safeFilename } from '../../crypto/attachments.js';
 import {
   ConnectionBadge,
   DeliveryIndicator,
@@ -274,7 +275,8 @@ function AttachmentRow({ attachment }: { attachment: AttachmentDescriptor }): JS
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = attachment.filename;
+      // The name comes from the peer; reduce it to a safe basename on save.
+      anchor.download = safeFilename(attachment.filename);
       anchor.click();
       URL.revokeObjectURL(url);
       setState('idle');
@@ -288,8 +290,8 @@ function AttachmentRow({ attachment }: { attachment: AttachmentDescriptor }): JS
   return (
     <div className="attachment">
       <span aria-hidden="true">📎</span>
-      <span className="attachment-name" title={attachment.filename}>
-        {attachment.filename}
+      <span className="attachment-name" title={safeFilename(attachment.filename)}>
+        {safeFilename(attachment.filename)}
       </span>
       <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
         {formatBytes(attachment.size)}

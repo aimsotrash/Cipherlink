@@ -53,6 +53,25 @@ export interface AttachmentMetadata {
 }
 
 /**
+ * Reduce a peer-supplied filename to a safe basename.
+ *
+ * The descriptor is authenticated, so this is not defending against the relay
+ * — it is defending against a *peer* who names a file `../../.bashrc` or
+ * embeds control characters. Applied on display and on save, never before
+ * encryption, so it cannot change the AAD the sender committed to.
+ */
+export function safeFilename(filename: string, fallback = 'attachment'): string {
+  const basename = filename.split(/[/\\]/).pop() ?? '';
+  const cleaned = basename
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/^\.+/, '')
+    .trim()
+    .slice(0, 200);
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+/**
  * Bind the ciphertext to its metadata via GCM additional authenticated data,
  * so a relay cannot swap the blob for another one this user uploaded and have
  * it decrypt cleanly under a re-used descriptor.
