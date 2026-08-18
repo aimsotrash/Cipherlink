@@ -1,0 +1,33 @@
+{
+  "name": "@p2pchat/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "stage:wasm": "node scripts/stage-wasm.mjs",
+    "predev": "npm run stage:wasm",
+    "dev": "vite",
+    "prebuild": "npm run stage:wasm",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.8.0",
+    "@noble/hashes": "^1.7.0",
+    "@p2pchat/shared": "*",
+    "@wireapp/core-crypto": "^10.3.0",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@ubjs/core": "^0.31.0-3",
+    "@ubjs/node": "^0.31.0-3",
+    "@vitejs/plugin-react": "^6.0.5",
+    "vite": "^8.2.1"
+  }
+}

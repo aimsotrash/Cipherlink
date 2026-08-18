@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@corecrypto": ["../node_modules/@wireapp/core-crypto/dist/browser/corecrypto.d.ts"],
+      "@p2pchat/shared": ["../shared/src/index.ts"]
+    }
+  },
+  // Only the test files: TypeScript follows their imports into client/ and
+  // server/ on its own, which keeps the UI's .tsx out of this project.
+  "include": ["**/*.ts"]
+}

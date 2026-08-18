@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@p2pchat/shared": ["../shared/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}
