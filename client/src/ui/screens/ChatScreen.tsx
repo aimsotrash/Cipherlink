@@ -36,8 +36,19 @@ export function ChatScreen({
 
   useEffect(() => {
     void loadMessages(conversation.id);
-    void markRead(conversation.id);
-  }, [conversation.id, loadMessages, markRead]);
+  }, [conversation.id, loadMessages]);
+
+  // A message that arrives while this conversation is on screen has been seen;
+  // one that arrives while the tab is hidden counts once the tab is shown.
+  const inboundCount = conversationMessages.filter((message) => !message.outgoing).length;
+  useEffect(() => {
+    const markIfVisible = (): void => {
+      if (document.visibilityState === 'visible') void markRead(conversation.id);
+    };
+    markIfVisible();
+    document.addEventListener('visibilitychange', markIfVisible);
+    return () => document.removeEventListener('visibilitychange', markIfVisible);
+  }, [conversation.id, inboundCount, markRead]);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -188,7 +199,10 @@ export function ChatScreen({
           multiple
           hidden
           onChange={(event) => {
-            setFiles((current) => [...current, ...Array.from(event.target.files ?? [])]);
+            // Copy the list now: clearing the input below empties the live
+            // FileList before React runs the state updater.
+            const picked = Array.from(event.target.files ?? []);
+            setFiles((current) => [...current, ...picked]);
             event.target.value = '';
           }}
         />
