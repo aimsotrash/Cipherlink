@@ -2,15 +2,22 @@
  * Transport behaviour: direct connections, relay fallback, reconnection and
  * network transitions.
  *
- * These drive the real {@link PeerLink} state machine over a simulated WebRTC
- * layer, so the fallback logic under test is the code that ships.
+ * These drive the real {@link PeerLink} state machine and the real signaling
+ * client over a simulated WebRTC layer and an in-memory hub, so the fallback
+ * and session logic under test is the code that ships.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { silentLogger, type PeerAddress, type TransportFrame } from '@p2pchat/shared';
 import { PeerLink } from '../../client/src/p2p/peerLink.js';
+import { asSignalTransport } from '../../client/src/p2p/signalingClient.js';
 import { TransportManager } from '../../client/src/p2p/transportManager.js';
-import type { SignalTransport, TransportKind } from '../../client/src/p2p/types.js';
+import type {
+  DirectChannelFactory,
+  SignalTransport,
+  TransportKind,
+} from '../../client/src/p2p/types.js';
 import { FakeDirectNetwork } from '../helpers/fakeTransport.js';
+import { FakeSignalingHub } from '../helpers/fakeSignaling.js';
 import { waitFor } from '../helpers/e2e.js';
 
 const ALICE: PeerAddress = { userId: 'aaaaaaaa-0000-4000-8000-000000000001', deviceId: '0000000000000001' };
@@ -23,10 +30,11 @@ const FRAME: TransportFrame = {
   payload: Buffer.from('ciphertext').toString('base64'),
 };
 
-/** Signaling is irrelevant to the simulated channel; satisfy the interface. */
-const noopSignal: SignalTransport = {
+/** For links whose channel factory never consults signaling. */
+const silentSignal: SignalTransport = {
   send: () => undefined,
   subscribe: () => () => undefined,
+  subscribeOffers: () => () => undefined,
 };
 
 const FAST_TIMINGS = {
@@ -38,29 +46,33 @@ const FAST_TIMINGS = {
 
 describe('peer transport', () => {
   let network: FakeDirectNetwork;
+  let hub: FakeSignalingHub;
   const relayed: { peer: PeerAddress; frame: TransportFrame }[] = [];
   let links: PeerLink[] = [];
 
   beforeEach(() => {
     network = new FakeDirectNetwork();
+    hub = new FakeSignalingHub();
     relayed.length = 0;
     links = [];
   });
 
   afterEach(() => {
     for (const link of links) link.close();
+    hub.stopAll();
   });
 
   function makeLink(
     self: PeerAddress,
     peer: PeerAddress,
     policy = { allowRelayFallback: true, preferDirectOnly: false },
+    signal: SignalTransport = asSignalTransport(hub.client(self)),
   ): PeerLink {
     const link = new PeerLink({
       self,
       peer,
       channelFactory: network.factoryFor(self),
-      signal: noopSignal,
+      signal,
       relay: { send: (to, frame) => relayed.push({ peer: to, frame }) },
       getIceServers: async () => [],
       policy: () => policy,
@@ -188,17 +200,131 @@ describe('peer transport', () => {
     a.acceptRelayFrame({ v: 1, type: 'keepalive', t: Date.now() });
     expect(received).toHaveLength(0);
   });
+
+  // ALICE's address sorts first, so in these tests she offers and BOB answers.
+
+  it('answers in the session the offer named, never one of its own', async () => {
+    const a = makeLink(ALICE, BOB);
+    const b = makeLink(BOB, ALICE);
+    a.connect();
+    b.connect();
+    await waitFor(() => a.status.state === 'connected' && b.status.state === 'connected', 5000, 'direct connection');
+
+    const offered = network.attemptLog.filter((entry) => entry.initiator).map((entry) => entry.sessionId);
+    const answered = network.attemptLog.filter((entry) => !entry.initiator).map((entry) => entry.sessionId);
+    expect(answered.length).toBeGreaterThan(0);
+    for (const sessionId of answered) expect(offered).toContain(sessionId);
+  });
+
+  it('answers an offer that arrived before the answering side was listening', async () => {
+    // BOB is online but has no link to ALICE yet, as when her offer races ahead
+    // of the relayed message that makes his client open one.
+    const bobSignal = asSignalTransport(hub.client(BOB));
+    const a = makeLink(ALICE, BOB);
+    a.connect();
+    await waitFor(() => network.attemptLog.some((entry) => entry.initiator), 5000, 'offer');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const b = makeLink(BOB, ALICE, undefined, bobSignal);
+    b.connect();
+    await waitFor(() => a.status.state === 'connected' && b.status.state === 'connected', 5000, 'direct connection');
+    // The original offer was answered: neither side had to retry.
+    expect(network.attemptLog).toHaveLength(2);
+  });
+
+  it('replaces a stale channel when the offering side starts over', async () => {
+    const a = makeLink(ALICE, BOB);
+    const b = makeLink(BOB, ALICE);
+    a.connect();
+    b.connect();
+    await waitFor(() => a.status.state === 'connected' && b.status.state === 'connected', 5000, 'first connection');
+    const firstSession = network.attemptLog[0]!.sessionId;
+
+    // Only ALICE notices the path died; BOB's end still looks open.
+    network.dropEnd(ALICE);
+    await waitFor(() => network.attemptLog.filter((entry) => entry.initiator).length >= 2, 5000, 'new offer');
+    await waitFor(() => a.status.state === 'connected' && b.status.state === 'connected', 5000, 'reconnection');
+
+    const received: TransportFrame[] = [];
+    b.onFrame.subscribe(({ frame }) => received.push(frame));
+    expect(await a.send(FRAME)).toBe('p2p-direct');
+    await waitFor(() => received.length === 1, 5000, 'delivery over the new channel');
+    expect(network.attemptLog.at(-1)!.sessionId).not.toBe(firstSession);
+  });
+
+  it('drops a negotiation the offerer abandoned when a newer offer arrives', async () => {
+    const attempts: { sessionId: string; aborted: boolean }[] = [];
+    const stalls: DirectChannelFactory = {
+      connect: (options) =>
+        new Promise((_resolve, reject) => {
+          const attempt = { sessionId: options.sessionId, aborted: false };
+          attempts.push(attempt);
+          options.abortSignal?.addEventListener('abort', () => {
+            attempt.aborted = true;
+            reject(new Error('aborted'));
+          });
+        }),
+    };
+    const b = new PeerLink({
+      self: BOB,
+      peer: ALICE,
+      channelFactory: stalls,
+      signal: silentSignal,
+      relay: { send: () => undefined },
+      getIceServers: async () => [],
+      policy: () => ({ allowRelayFallback: true, preferDirectOnly: false }),
+      logger: silentLogger,
+      timings: { ...FAST_TIMINGS, connectTimeoutMs: 5_000 },
+    });
+    links.push(b);
+
+    b.acceptOffer('first-session');
+    await waitFor(() => attempts.length === 1, 5000, 'first answer');
+    b.acceptOffer('second-session');
+    await waitFor(() => attempts.length === 2, 5000, 'second answer');
+
+    expect(attempts[0]).toEqual({ sessionId: 'first-session', aborted: true });
+    expect(attempts[1]).toEqual({ sessionId: 'second-session', aborted: false });
+    // Being superseded is not a failure, so the link did not fall back.
+    expect(b.status.state).toBe('connecting');
+  });
+
+  it('never answers on the offering side', async () => {
+    const attempts: string[] = [];
+    const a = new PeerLink({
+      self: ALICE,
+      peer: BOB,
+      channelFactory: {
+        connect: (options) => {
+          attempts.push(options.sessionId);
+          return new Promise(() => undefined);
+        },
+      },
+      signal: silentSignal,
+      relay: { send: () => undefined },
+      getIceServers: async () => [],
+      policy: () => ({ allowRelayFallback: true, preferDirectOnly: false }),
+      logger: silentLogger,
+      timings: FAST_TIMINGS,
+    });
+    links.push(a);
+
+    a.acceptOffer('unsolicited');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(attempts).toHaveLength(0);
+  });
 });
 
 describe('transport manager', () => {
   it('routes frames per peer and reports status for each', async () => {
     const network = new FakeDirectNetwork();
+    const hub = new FakeSignalingHub();
     const relayedFrames: TransportFrame[] = [];
 
     const managerA = new TransportManager({
       self: ALICE,
       channelFactory: network.factoryFor(ALICE),
-      signal: noopSignal,
+      signal: asSignalTransport(hub.client(ALICE)),
       relay: { send: (_peer, frame) => relayedFrames.push(frame) },
       getIceServers: async () => [],
       policy: () => ({ allowRelayFallback: true, preferDirectOnly: false }),
@@ -208,7 +334,7 @@ describe('transport manager', () => {
     const managerB = new TransportManager({
       self: BOB,
       channelFactory: network.factoryFor(BOB),
-      signal: noopSignal,
+      signal: asSignalTransport(hub.client(BOB)),
       relay: { send: () => undefined },
       getIceServers: async () => [],
       policy: () => ({ allowRelayFallback: true, preferDirectOnly: false }),
@@ -231,5 +357,6 @@ describe('transport manager', () => {
 
     managerA.closeAll();
     managerB.closeAll();
+    hub.stopAll();
   });
 });

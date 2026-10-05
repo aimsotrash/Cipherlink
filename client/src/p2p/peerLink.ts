@@ -94,6 +94,13 @@ export class PeerLink {
   private closed = false;
   /** Frames waiting for any usable path. */
   private readonly pending: TransportFrame[] = [];
+  /** Session of the negotiation in progress, or of the live channel. */
+  private session: string | null = null;
+  /** Resolves an answering-side attempt that is waiting for the peer's offer. */
+  private offerWaiter: ((sessionId: string) => void) | null = null;
+  /** A newer offer that arrived mid-negotiation, answered once that attempt unwinds. */
+  private nextOffer: string | null = null;
+  private readonly stopListening: () => void;
 
   constructor(private readonly options: PeerLinkOptions) {
     this.logger = (options.logger ?? silentLogger).child('peerlink', {
@@ -103,6 +110,9 @@ export class PeerLink {
     this.timings = { ...DEFAULT_TIMINGS, ...(options.timings ?? {}) };
     this.now = options.now ?? Date.now;
     this.since = this.now();
+    this.stopListening = options.signal.subscribeOffers(options.peer, (sessionId) =>
+      this.acceptOffer(sessionId),
+    );
   }
 
   get status(): PeerLinkStatus {
@@ -117,7 +127,8 @@ export class PeerLink {
 
   /**
    * Glare avoidance: exactly one side sends the offer, decided by comparing
-   * addresses, so two peers connecting simultaneously do not deadlock.
+   * addresses, so two peers connecting simultaneously do not deadlock. The
+   * other side answers, joining the session the offer names.
    */
   private get isInitiator(): boolean {
     return peerKey(this.options.self) < peerKey(this.options.peer);
@@ -137,7 +148,7 @@ export class PeerLink {
     void this.ensureDirectChannel();
   }
 
-  private async ensureDirectChannel(): Promise<void> {
+  private async ensureDirectChannel(offeredSession?: string): Promise<void> {
     if (this.closed || this.channel || this.connecting) return;
     const policy = this.options.policy();
 
@@ -147,10 +158,17 @@ export class PeerLink {
       const abort = new AbortController();
       this.connectAbort = abort;
       try {
+        // Only the offering side picks a session ID. The answering side must
+        // join the one the offer carries; with an ID of its own it would be
+        // listening on a session the offerer never uses.
+        const sessionId = this.isInitiator
+          ? randomId()
+          : (offeredSession ?? (await this.waitForOffer(abort.signal)));
+        this.session = sessionId;
         const iceServers = await this.options.getIceServers();
         const channel = await this.options.channelFactory.connect({
           peer: this.options.peer,
-          sessionId: randomId(),
+          sessionId,
           initiator: this.isInitiator,
           iceServers,
           directOnly: policy.preferDirectOnly,
@@ -160,8 +178,10 @@ export class PeerLink {
         });
         this.adoptChannel(channel);
       } catch (error) {
-        this.handleDirectFailure(error);
+        // Being superseded by a newer offer, or closed, is not a failure.
+        if (!this.closed && this.nextOffer === null) this.handleDirectFailure(error);
       } finally {
+        if (!this.channel) this.session = null;
         this.connectAbort = null;
         this.connecting = null;
       }
@@ -169,6 +189,64 @@ export class PeerLink {
 
     this.connecting = attempt;
     await attempt;
+
+    const next = this.nextOffer;
+    this.nextOffer = null;
+    if (next !== null) void this.ensureDirectChannel(next);
+  }
+
+  /** Answering side: wait for the peer to offer a session, up to the connect timeout. */
+  private waitForOffer(abortSignal: AbortSignal): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (outcome: string | Error): void => {
+        clearTimeout(timer);
+        abortSignal.removeEventListener('abort', onAbort);
+        if (this.offerWaiter === waiter) this.offerWaiter = null;
+        if (typeof outcome === 'string') resolve(outcome);
+        else reject(outcome);
+      };
+      const waiter = (sessionId: string): void => finish(sessionId);
+      const onAbort = (): void => finish(new Error('connection attempt aborted'));
+      this.offerWaiter = waiter;
+      abortSignal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(
+        () => finish(new Error('timed out waiting for the peer to offer a connection')),
+        this.timings.connectTimeoutMs,
+      );
+    });
+  }
+
+  /**
+   * The peer offered a direct connection under `sessionId`. Called for every
+   * offer the peer sends; only the answering side acts on it.
+   */
+  acceptOffer(sessionId: string): void {
+    if (this.closed || this.isInitiator || sessionId === this.session) return;
+
+    if (this.offerWaiter) {
+      this.session = sessionId;
+      this.offerWaiter(sessionId);
+      return;
+    }
+
+    if (this.channel) {
+      // The offerer only offers again once its end of our channel is gone, so
+      // ours is stale too. Replace it rather than wait for ICE to notice.
+      const stale = this.channel;
+      this.teardownChannel();
+      stale.close();
+      this.setState('reconnecting', null);
+    }
+
+    if (this.connecting) {
+      // Still negotiating a session the offerer has since abandoned.
+      this.nextOffer = sessionId;
+      this.connectAbort?.abort();
+      return;
+    }
+
+    void this.ensureDirectChannel(sessionId);
   }
 
   private adoptChannel(channel: DirectChannel): void {
@@ -222,6 +300,7 @@ export class PeerLink {
   private teardownChannel(): void {
     for (const dispose of this.channelDisposers.splice(0)) dispose();
     this.channel = null;
+    this.session = null;
     this.stopKeepalive();
   }
 
@@ -334,6 +413,7 @@ export class PeerLink {
 
   close(): void {
     this.closed = true;
+    this.stopListening();
     this.connectAbort?.abort();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;

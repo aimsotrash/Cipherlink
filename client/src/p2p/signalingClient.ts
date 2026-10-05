@@ -58,6 +58,17 @@ export interface SignalingClientOptions {
 
 const DEFAULT_BACKOFF = [500, 1000, 2000, 5000, 10_000, 30_000];
 
+/**
+ * Signals for a session nobody has subscribed to yet are held briefly. The
+ * answering side only learns a session ID from the offer itself, and the
+ * offerer's first ICE candidates usually arrive a few milliseconds later, so
+ * without this they would be dropped before the answerer joins. Bounded so a
+ * chatty peer cannot grow memory without limit.
+ */
+const UNCLAIMED_TTL_MS = 30_000;
+const UNCLAIMED_MAX_SESSIONS = 16;
+const UNCLAIMED_MAX_PER_SESSION = 64;
+
 export interface RelayDelivery {
   readonly envelopeId: string;
   readonly from: PeerAddress;
@@ -84,12 +95,17 @@ export class SignalingClient {
   private readonly backoff: number[];
   private readonly WebSocketImpl: WebSocketConstructor;
   private readonly signalHandlers = new Map<string, Set<(payload: SignalPayload) => void>>();
+  private readonly offerHandlers = new Map<string, Set<(sessionId: string) => void>>();
+  /** Signals for sessions nobody has joined yet, oldest session first. */
+  private readonly unclaimed = new Map<string, { receivedAt: number; payloads: SignalPayload[] }>();
   /** Frames queued while the socket is down, flushed on reconnect. */
   private readonly outboundQueue: ClientToServerMessage[] = [];
+  private readonly now: () => number;
 
   constructor(private readonly options: SignalingClientOptions) {
     this.logger = (options.logger ?? silentLogger).child('signaling');
     this.backoff = options.backoffMs ?? DEFAULT_BACKOFF;
+    this.now = options.now ?? Date.now;
     const impl =
       options.webSocketConstructor ??
       (globalThis as { WebSocket?: WebSocketConstructor }).WebSocket;
@@ -114,6 +130,7 @@ export class SignalingClient {
 
   stop(): void {
     this.stopped = true;
+    this.unclaimed.clear();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -218,10 +235,15 @@ export class SignalingClient {
         this.logger.warn('server reported an error', { code: parsed.code });
         break;
       case 'signal': {
-        const handlers = this.signalHandlers.get(
-          signalKey(parsed.from, parsed.payload.sessionId),
-        );
-        if (handlers) for (const handler of [...handlers]) handler(parsed.payload);
+        const { from, payload } = parsed;
+        const key = signalKey(from, payload.sessionId);
+        const handlers = this.signalHandlers.get(key);
+        if (handlers) for (const handler of [...handlers]) handler(payload);
+        else this.holdUnclaimed(key, payload);
+        if (payload.kind === 'offer') {
+          const offerHandlers = this.offerHandlers.get(peerKey(from));
+          if (offerHandlers) for (const handler of [...offerHandlers]) handler(payload.sessionId);
+        }
         break;
       }
       case 'relay.deliver': {
@@ -299,10 +321,81 @@ export class SignalingClient {
       this.signalHandlers.set(key, handlers);
     }
     handlers.add(handler);
+
+    this.pruneUnclaimed();
+    const early = this.unclaimed.get(key);
+    if (early) {
+      this.unclaimed.delete(key);
+      // Replay once the caller has finished subscribing, in arrival order.
+      queueMicrotask(() => {
+        for (const payload of early.payloads) {
+          if (handlers!.has(handler)) handler(payload);
+        }
+      });
+    }
+
     return () => {
       handlers!.delete(handler);
       if (handlers!.size === 0) this.signalHandlers.delete(key);
     };
+  }
+
+  subscribeOffers(peer: PeerAddress, handler: (sessionId: string) => void): () => void {
+    const key = peerKey(peer);
+    let handlers = this.offerHandlers.get(key);
+    if (!handlers) {
+      handlers = new Set();
+      this.offerHandlers.set(key, handlers);
+    }
+    handlers.add(handler);
+
+    // An offer that arrived just before this subscription is still worth
+    // answering: the offerer keeps waiting for an answer until it times out.
+    const pending = this.latestUnclaimedOffer(peer);
+    if (pending) {
+      queueMicrotask(() => {
+        if (handlers!.has(handler)) handler(pending);
+      });
+    }
+
+    return () => {
+      handlers!.delete(handler);
+      if (handlers!.size === 0) this.offerHandlers.delete(key);
+    };
+  }
+
+  private holdUnclaimed(key: string, payload: SignalPayload): void {
+    this.pruneUnclaimed();
+    let entry = this.unclaimed.get(key);
+    if (!entry) {
+      if (this.unclaimed.size >= UNCLAIMED_MAX_SESSIONS) {
+        const oldest = this.unclaimed.keys().next().value;
+        if (oldest !== undefined) this.unclaimed.delete(oldest);
+      }
+      entry = { receivedAt: this.now(), payloads: [] };
+      this.unclaimed.set(key, entry);
+    }
+    if (entry.payloads.length < UNCLAIMED_MAX_PER_SESSION) entry.payloads.push(payload);
+  }
+
+  private pruneUnclaimed(): void {
+    const cutoff = this.now() - UNCLAIMED_TTL_MS;
+    for (const [key, entry] of this.unclaimed) {
+      if (entry.receivedAt < cutoff) this.unclaimed.delete(key);
+    }
+  }
+
+  /** The newest held offer from `peer`, if one is still within its lifetime. */
+  private latestUnclaimedOffer(peer: PeerAddress): string | null {
+    this.pruneUnclaimed();
+    const prefix = `${peerKey(peer)}|`;
+    let latest: string | null = null;
+    for (const [key, entry] of this.unclaimed) {
+      if (!key.startsWith(prefix)) continue;
+      const offer = entry.payloads.find((payload) => payload.kind === 'offer');
+      if (offer) latest = offer.sessionId;
+    }
+    return latest;
   }
 
   // -- relay ----------------------------------------------------------------
@@ -332,6 +425,7 @@ export function asSignalTransport(client: SignalingClient): SignalTransport {
   return {
     send: (peer, payload) => client.sendSignal(peer, payload),
     subscribe: (peer, sessionId, handler) => client.subscribe(peer, sessionId, handler),
+    subscribeOffers: (peer, handler) => client.subscribeOffers(peer, handler),
   };
 }
 

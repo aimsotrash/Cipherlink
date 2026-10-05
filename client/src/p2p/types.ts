@@ -67,12 +67,22 @@ export interface DirectChannelConnectOptions {
 /** The subset of signaling a channel implementation needs. */
 export interface SignalTransport {
   send(peer: PeerAddress, payload: SignalPayload): void;
-  /** Fires for signaling addressed to us from `peer` for `sessionId`. */
+  /**
+   * Fires for signaling addressed to us from `peer` for `sessionId`. Signals
+   * that arrived before anyone subscribed (the offer, early ICE candidates)
+   * are replayed to the subscriber, so joining a session late loses nothing.
+   */
   subscribe(
     peer: PeerAddress,
     sessionId: string,
     handler: (payload: SignalPayload) => void,
   ): () => void;
+  /**
+   * Fires with the session ID of each offer `peer` sends us, including one
+   * that arrived shortly before this subscription. Only the offering side
+   * picks session IDs; this is how the answering side learns which to join.
+   */
+  subscribeOffers(peer: PeerAddress, handler: (sessionId: string) => void): () => void;
 }
 
 /** Minimal typed event emitter. */
