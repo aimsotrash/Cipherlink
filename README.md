@@ -12,6 +12,18 @@ that carries ciphertext it cannot read when it is not.
 > [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md) before
 > trusting it with anything that matters.
 
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Alice's view of a verified, end-to-end encrypted conversation with Bob" src="docs/screenshots/chat.png"></td>
+    <td width="50%"><img alt="The verification dialog: a 60-digit safety number and a QR code to compare out of band" src="docs/screenshots/verify.png"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>A verified conversation; the relay only ever carries ciphertext</sub></td>
+    <td align="center"><sub>Safety-number verification, compared over a channel you trust</sub></td>
+  </tr>
+</table>
+
 ---
 
 ## What it actually protects
