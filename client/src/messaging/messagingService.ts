@@ -54,6 +54,23 @@ import type { TransportManager } from '../p2p/transportManager.js';
 import { EventChannel, type TransportKind } from '../p2p/types.js';
 import type { ApiClient } from '../p2p/apiClient.js';
 
+const STATUS_ORDER: Record<DeliveryStatus, number> = {
+  pending: 0,
+  failed: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+};
+
+/**
+ * Over a direct channel a receipt can arrive before the send that produced it
+ * has finished its own bookkeeping, and receipts can arrive out of order, so a
+ * message's status only ever moves forward.
+ */
+function laterStatus(current: DeliveryStatus, next: DeliveryStatus): DeliveryStatus {
+  return STATUS_ORDER[next] >= STATUS_ORDER[current] ? next : current;
+}
+
 export interface OutgoingAttachment {
   readonly data: Uint8Array;
   readonly filename: string;
@@ -374,7 +391,10 @@ export class MessagingService {
       messagesSinceRekey: session.messagesSinceRekey + 1,
     });
 
-    const updated = await this.patchMessage(conversationId, messageId, { status, transport });
+    const updated = await this.patchMessage(conversationId, messageId, (existing) => ({
+      status: laterStatus(existing.status, status),
+      transport,
+    }));
     await this.touchConversation(conversation, body || attachmentPreview(descriptors));
     void this.maybeRotateKeys(conversationId);
     return updated ?? stored;
@@ -737,7 +757,9 @@ export class MessagingService {
     status: DeliveryStatus,
   ): Promise<void> {
     for (const id of ids) {
-      const updated = await this.patchMessage(conversationId, id, { status });
+      const updated = await this.patchMessage(conversationId, id, (existing) => ({
+        status: laterStatus(existing.status, status),
+      }));
       if (updated) this.onMessageUpdated.emit(updated);
     }
   }
@@ -745,7 +767,7 @@ export class MessagingService {
   private async patchMessage(
     conversationId: string,
     messageId: string,
-    patch: Partial<StoredMessage>,
+    patch: Partial<StoredMessage> | ((existing: StoredMessage) => Partial<StoredMessage>),
   ): Promise<StoredMessage | undefined> {
     const updated = await this.options.repository.updateMessage(conversationId, messageId, patch);
     if (updated) this.onMessageUpdated.emit(updated);

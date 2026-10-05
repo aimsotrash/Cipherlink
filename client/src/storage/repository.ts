@@ -37,6 +37,9 @@ const KEYS = {
 const RECENT_ID_WINDOW = 512;
 
 export class Repository {
+  /** Pending writes per message, so updates to one message never interleave. */
+  private readonly messageWrites = new Map<string, Promise<unknown>>();
+
   constructor(private readonly store: EncryptedStore) {}
 
   // -- conversations --------------------------------------------------------
@@ -86,19 +89,37 @@ export class Repository {
    * Update a stored message in place. Messages are keyed by receipt time, so
    * we locate the existing key rather than assuming we can recompute it.
    */
+  /**
+   * Update a stored message. `patch` may be computed from the stored record;
+   * updates to the same message run one at a time, so a computed patch always
+   * sees the latest write rather than racing another read-modify-write.
+   */
   async updateMessage(
     conversationId: string,
     messageId: string,
-    patch: Partial<StoredMessage>,
+    patch: Partial<StoredMessage> | ((existing: StoredMessage) => Partial<StoredMessage>),
   ): Promise<StoredMessage | undefined> {
-    const keys = await this.store.keys(KEYS.messagePrefix(conversationId));
-    const match = keys.find((key) => key.endsWith(`/${messageId}`));
-    if (!match) return undefined;
-    const existing = await this.store.get<StoredMessage>(match);
-    if (!existing) return undefined;
-    const updated: StoredMessage = { ...existing, ...patch };
-    await this.store.put(match, updated);
-    return updated;
+    const lockKey = `${conversationId}/${messageId}`;
+    const previous = this.messageWrites.get(lockKey) ?? Promise.resolve();
+    const write = previous
+      .catch(() => undefined)
+      .then(async () => {
+        const keys = await this.store.keys(KEYS.messagePrefix(conversationId));
+        const match = keys.find((key) => key.endsWith(`/${messageId}`));
+        if (!match) return undefined;
+        const existing = await this.store.get<StoredMessage>(match);
+        if (!existing) return undefined;
+        const changes = typeof patch === 'function' ? patch(existing) : patch;
+        const updated: StoredMessage = { ...existing, ...changes };
+        await this.store.put(match, updated);
+        return updated;
+      });
+    this.messageWrites.set(lockKey, write);
+    try {
+      return await write;
+    } finally {
+      if (this.messageWrites.get(lockKey) === write) this.messageWrites.delete(lockKey);
+    }
   }
 
   // -- contacts -------------------------------------------------------------

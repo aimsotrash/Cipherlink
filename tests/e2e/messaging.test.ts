@@ -63,6 +63,35 @@ describe('end-to-end messaging', () => {
     );
   });
 
+  it('keeps a message delivered when the receipt overtakes the send', async () => {
+    const conversationId = await conversation();
+    await waitFor(
+      () => alice.ready.transport.allStatuses().some((s) => s.state === 'connected'),
+      15_000,
+      'direct connection',
+    );
+
+    // Over a direct channel the receipt can come back before sendText has
+    // finished its own bookkeeping. Slow that bookkeeping down, as a busy
+    // device would, so the receipt is applied first.
+    const repository = alice.ready.repository;
+    const saveSessionState = repository.saveSessionState.bind(repository);
+    repository.saveSessionState = async (state) => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return saveSessionState(state);
+    };
+
+    const sent = await alice.ready.messaging.sendText(conversationId, 'quick one');
+    repository.saveSessionState = saveSessionState;
+
+    const statusOf = async (): Promise<string | undefined> =>
+      (await repository.listMessages(conversationId)).find((m) => m.id === sent.id)?.status;
+    await waitFor(async () => (await statusOf()) === 'delivered', 15_000, 'delivery receipt');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    // The late 'sent' bookkeeping must not demote it.
+    expect(await statusOf()).toBe('delivered');
+  });
+
   it('upgrades to a direct connection and reports it', async () => {
     const conversationId = await conversation();
     const atBob: StoredMessage[] = [];
