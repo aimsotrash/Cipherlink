@@ -28,7 +28,7 @@ IndexedDB.
 ## Commands
 
 ```bash
-npm test              # full suite (127 tests)
+npm test              # full suite (138 tests)
 npm run test:watch
 npm run typecheck     # every workspace
 npm run build         # production client bundle

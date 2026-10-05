@@ -19,7 +19,7 @@ that carries ciphertext it cannot read when it is not.
     <td width="50%"><img alt="The verification dialog: a 60-digit safety number and a QR code to compare out of band" src="docs/screenshots/verify.png"></td>
   </tr>
   <tr>
-    <td align="center"><sub>A verified conversation; the relay only ever carries ciphertext</sub></td>
+    <td align="center"><sub>A verified conversation over a direct peer-to-peer channel, with an attachment</sub></td>
     <td align="center"><sub>Safety-number verification, compared over a channel you trust</sub></td>
   </tr>
 </table>
@@ -121,7 +121,7 @@ and start a conversation by username.
 Run the tests:
 
 ```bash
-npm test             # 127 tests, including the adversarial server suite
+npm test             # 138 tests, including the adversarial server suite
 npm run typecheck
 ```
 
