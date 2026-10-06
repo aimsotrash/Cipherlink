@@ -4,6 +4,7 @@
  * Defaults are chosen so a developer can run the stack with no environment
  * setup, while every value that matters in production is overridable.
  */
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 const iceServerListSchema = z.array(
@@ -42,7 +43,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   return {
     host: env.HOST ?? '127.0.0.1',
     port: Number(env.PORT ?? 8787),
-    databasePath: env.DATABASE_PATH ?? 'server/data/p2pchat.sqlite',
+    // Anchored to this package, so it lands in server/data/ whatever the working
+    // directory (npm workspace scripts run in server/).
+    databasePath:
+      env.DATABASE_PATH ?? fileURLToPath(new URL('../data/p2pchat.sqlite', import.meta.url)),
     logLevel: (env.LOG_LEVEL as ServerConfig['logLevel']) ?? 'info',
     corsOrigins: (env.CORS_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173')
       .split(',')
