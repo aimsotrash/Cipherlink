@@ -1,5 +1,7 @@
 # Cipherlink
 
+[![CI](https://github.com/aimsotrash/Cipherlink/actions/workflows/ci.yml/badge.svg)](https://github.com/aimsotrash/Cipherlink/actions/workflows/ci.yml)
+
 A privacy-first, peer-to-peer chat application where message content is
 end-to-end encrypted with **MLS (RFC 9420)**. Messages travel directly between
 devices over WebRTC DataChannels when that is possible, and through a relay
