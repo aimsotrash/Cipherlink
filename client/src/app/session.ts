@@ -37,7 +37,11 @@ import {
 } from '../identity/deviceKey.js';
 import { TrustStore } from '../identity/trustStore.js';
 import { EncryptedStore } from '../storage/encryptedStore.js';
-import { createDefaultKeyValueStore, type KeyValueStore } from '../storage/kv.js';
+import {
+  createDefaultKeyValueStore,
+  deleteAppDatabases,
+  type KeyValueStore,
+} from '../storage/kv.js';
 import { Repository } from '../storage/repository.js';
 import {
   DEFAULT_ARGON2_PARAMS,
@@ -167,7 +171,18 @@ export class AppSession {
 
   static async bootstrap(config: SessionConfig): Promise<AppSession> {
     const session = new AppSession(config, 'loading');
-    session.phase = session.recordStore.read() ? 'locked' : 'needs-registration';
+    if (session.recordStore.read()) {
+      session.phase = 'locked';
+      return session;
+    }
+    // Without the device record (it holds the wrapped vault key) nothing in
+    // IndexedDB can be decrypted again: anything there is left over from an
+    // erase or an earlier install. Delete it now, while core-crypto has
+    // nothing open.
+    await deleteAppDatabases().catch(() => {
+      session.logger.warn('could not delete leftover local databases');
+    });
+    session.phase = 'needs-registration';
     return session;
   }
 
@@ -527,9 +542,12 @@ export class AppSession {
   /**
    * Remove this device's local data entirely.
    *
-   * The MLS key store and the record store are both dropped, so the private
-   * signature key and every group secret are gone from this machine. Messages
-   * already delivered to peers are unaffected — nothing here can reach them.
+   * Records are wiped and the device record, which holds the wrapped vault
+   * key, is removed, so the MLS key store can no longer be decrypted. The
+   * databases themselves are deleted by {@link AppSession.bootstrap} on the
+   * next page load: core-crypto keeps its database open until the page goes
+   * away. Messages already delivered to peers are unaffected — nothing here
+   * can reach them.
    */
   async destroyLocalData(): Promise<void> {
     const ready = this.ready;

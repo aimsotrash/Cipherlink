@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AuthenticationError } from '../../client/src/crypto/aead.js';
 import {
   KEY_PURPOSE,
@@ -8,7 +8,12 @@ import {
   unlockVault,
 } from '../../client/src/storage/vault.js';
 import { EncryptedStore } from '../../client/src/storage/encryptedStore.js';
-import { MemoryKeyValueStore } from '../../client/src/storage/kv.js';
+import { MemoryKeyValueStore, deleteAppDatabases } from '../../client/src/storage/kv.js';
+import {
+  AppSession,
+  memoryDeviceRecordStore,
+  type DeviceRecord,
+} from '../../client/src/app/session.js';
 import { flipBufferBit } from '../helpers/tamper.js';
 
 const PASSPHRASE = 'correct horse battery staple';
@@ -137,5 +142,52 @@ describe('encrypted record store', () => {
     await encrypted.put('msg/c/001/x', { n: 1 });
     await encrypted.put('msg/c/002/x', { n: 2 });
     expect(await encrypted.list<{ n: number }>('msg/c/')).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);
+  });
+});
+
+describe('erasing local data', () => {
+  const NAMES = ['p2pchat-records-u-d', 'p2pchat-mls-u-d', 'core-crypto', 'another-app'];
+
+  /** Just enough IDBFactory to list databases and record deletions. */
+  function fakeIndexedDb(): { factory: IDBFactory; deleted: string[] } {
+    const deleted: string[] = [];
+    const factory = {
+      databases: async () => NAMES.map((name) => ({ name, version: 1 })),
+      deleteDatabase(name: string) {
+        deleted.push(name);
+        const request = {} as IDBOpenDBRequest;
+        setTimeout(() => request.onsuccess?.(new Event('success')));
+        return request;
+      },
+    };
+    return { factory: factory as unknown as IDBFactory, deleted };
+  }
+
+  it('deletes the app databases, including core-crypto’s key store, and nothing else', async () => {
+    const { factory, deleted } = fakeIndexedDb();
+    await deleteAppDatabases(factory);
+    expect(deleted).toEqual(['p2pchat-records-u-d', 'p2pchat-mls-u-d', 'core-crypto']);
+  });
+
+  it('clears leftovers at start-up only when no device is registered here', async () => {
+    const { factory, deleted } = fakeIndexedDb();
+    vi.stubGlobal('indexedDB', factory);
+    try {
+      const registered = memoryDeviceRecordStore();
+      registered.write({} as DeviceRecord);
+      await AppSession.bootstrap({ apiBaseUrl: '', wsUrl: '', deviceRecordStore: registered });
+      expect(deleted).toEqual([]);
+
+      const erased = memoryDeviceRecordStore();
+      const session = await AppSession.bootstrap({
+        apiBaseUrl: '',
+        wsUrl: '',
+        deviceRecordStore: erased,
+      });
+      expect(session.currentPhase).toBe('needs-registration');
+      expect(deleted).toEqual(['p2pchat-records-u-d', 'p2pchat-mls-u-d', 'core-crypto']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

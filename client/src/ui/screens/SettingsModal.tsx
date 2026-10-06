@@ -226,8 +226,10 @@ function PrivacyTab(): JSX.Element {
       <div className="settings-section">
         <h3>Danger zone</h3>
         <p className="toggle-help" style={{ marginBottom: 10 }}>
-          Deletes this device&rsquo;s identity key, message history and encrypted database. Messages
-          already delivered to your contacts are not affected — nothing here can reach them.
+          Deletes this device&rsquo;s identity keys, message history and encrypted databases from
+          this browser. Messages already delivered to your contacts are not affected — nothing here
+          can reach them. The device stays listed on your account until you revoke it from another
+          device.
         </p>
         {confirmWipe ? (
           <div style={{ display: 'flex', gap: 8 }}>

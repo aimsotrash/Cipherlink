@@ -208,11 +208,9 @@ export function SessionProvider({
   const destroyLocalData = useCallback(async () => {
     if (!session) return;
     await session.destroyLocalData();
-    setReady(null);
-    setConversations([]);
-    setMessages({});
-    setPeerStatuses({});
-    setPhase('needs-registration');
+    // The databases are deleted on the fresh load (see AppSession.bootstrap),
+    // which also drops any key material still held in this page's memory.
+    window.location.reload();
   }, [session]);
 
   const refreshConversations = useCallback(async () => {
