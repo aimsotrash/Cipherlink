@@ -57,6 +57,8 @@ export interface Contact {
   readonly username: string;
   readonly addedAt: number;
   readonly deviceIds: string[];
+  /** Device names from the directory, as their owner chose them. Absent in older records. */
+  readonly deviceLabels?: Record<string, string>;
 }
 
 /** Per-conversation protocol bookkeeping. */

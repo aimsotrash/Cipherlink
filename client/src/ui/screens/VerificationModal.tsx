@@ -25,6 +25,8 @@ import type { IdentityRecord } from '../../identity/trustStore.js';
 
 interface DeviceVerification {
   readonly identity: MlsMemberIdentity;
+  /** The device's name, if the directory gave one when we added the contact. */
+  readonly label: string | undefined;
   readonly safetyNumber: SafetyNumber;
   readonly record: IdentityRecord | undefined;
   readonly qrDataUrl: string;
@@ -71,6 +73,7 @@ export function VerificationModal({
       }
 
       const remotes = identities.filter((identity) => identity !== local);
+      const contact = await ready.repository.getContact(conversation.peerUserId);
       const built = await Promise.all(
         remotes.map(async (identity) => {
           const safetyNumber = await deriveSafetyNumber(local, identity);
@@ -81,6 +84,7 @@ export function VerificationModal({
           });
           return {
             identity,
+            label: contact?.deviceLabels?.[identity.address.deviceId],
             safetyNumber,
             record: ready.trustStore.get(identity.address),
             qrDataUrl,
@@ -91,7 +95,7 @@ export function VerificationModal({
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not build the safety number.');
     }
-  }, [ready, conversation.id, version]);
+  }, [ready, conversation.id, conversation.peerUserId, version]);
 
   useEffect(() => {
     void load();
@@ -140,7 +144,13 @@ export function VerificationModal({
         {devices?.map((device) => (
           <section key={`${device.identity.address.userId}:${device.identity.address.deviceId}`}>
             <h3 style={{ fontSize: 13, color: 'var(--text-faint)' }}>
-              Device {device.identity.address.deviceId}
+              {device.label ? (
+                <>
+                  <bdi>{device.label}</bdi> · {device.identity.address.deviceId}
+                </>
+              ) : (
+                `Device ${device.identity.address.deviceId}`
+              )}
             </h3>
 
             {device.record?.state === 'changed' && (
@@ -153,10 +163,11 @@ export function VerificationModal({
               </div>
             )}
 
-            <div className="safety-number">{device.safetyNumber.formatted}</div>
-
-            <div className="qr-holder">
-              <img src={device.qrDataUrl} alt="QR code encoding this conversation's safety number" />
+            <div className="verify-codes">
+              <div className="safety-number">{device.safetyNumber.formatted}</div>
+              <div className="qr-holder">
+                <img src={device.qrDataUrl} alt="QR code encoding this conversation's safety number" />
+              </div>
             </div>
 
             <Field

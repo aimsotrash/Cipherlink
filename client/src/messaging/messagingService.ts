@@ -238,6 +238,7 @@ export class MessagingService {
       username: directory.username,
       addedAt: this.now(),
       deviceIds: directory.devices.map((d) => d.deviceId),
+      deviceLabels: Object.fromEntries(directory.devices.map((d) => [d.deviceId, d.label])),
     });
 
     for (const member of members) this.options.transport.warmUp(member);
@@ -529,6 +530,9 @@ export class MessagingService {
           username: directory.username,
           addedAt: this.now(),
           deviceIds: directory.devices.map((device) => device.deviceId),
+          deviceLabels: Object.fromEntries(
+            directory.devices.map((device) => [device.deviceId, device.label]),
+          ),
         });
       }
     } catch {

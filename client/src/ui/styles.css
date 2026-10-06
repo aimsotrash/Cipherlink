@@ -56,8 +56,12 @@
   --bubble-out: #d3e3ff;
   --bubble-in: #eceef2;
   --accent-contrast: #ffffff;
+  /* Darker than the dark theme's tones: at least 4.5:1 on their -dim tints. */
+  --ok: #17753f;
   --ok-dim: #dff3e7;
+  --warn: #8a5a00;
   --warn-dim: #fbf0d4;
+  --danger: #b42318;
   --danger-dim: #fbdedb;
   --shadow: 0 10px 30px rgb(15 23 42 / 12%);
 }
@@ -240,7 +244,15 @@ select {
   white-space: nowrap;
 }
 
+/* Truncates a long name instead of pushing the trust icon out of view. */
+.conversation-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .conversation-preview {
+  display: block;
   color: var(--text-faint);
   font-size: 13px;
   overflow: hidden;
@@ -530,7 +542,8 @@ select {
   letter-spacing: -0.02em;
 }
 
-.card .lede {
+.card .lede,
+.modal .lede {
   margin: 0 0 20px;
   color: var(--text-muted);
   font-size: 14px;
@@ -559,6 +572,7 @@ select {
 }
 
 .field .hint {
+  display: block;
   margin-top: 5px;
   font-size: 12px;
   font-weight: 400;
@@ -656,7 +670,9 @@ select {
 .modal {
   width: 100%;
   max-width: 520px;
-  max-height: 88vh;
+  /* All the height the backdrop's padding leaves (dvh: minus mobile toolbars). */
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
   padding: 24px;
   border: 1px solid var(--border);
@@ -679,8 +695,25 @@ select {
 
 /* ------------------------------------------------------- verification UI */
 
+/* The number beside its QR code, stacking when the dialog is narrow. */
+.verify-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 14px 0 18px;
+}
+
+.verify-codes .safety-number {
+  flex: 1 1 200px;
+  display: grid;
+  place-items: center;
+}
+
+.verify-codes .qr-holder {
+  margin: 0 auto;
+}
+
 .safety-number {
-  margin: 14px 0;
   padding: 14px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);

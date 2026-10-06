@@ -188,7 +188,7 @@ function ConversationRow({
       </span>
       <span className="conversation-main">
         <span className="conversation-title">
-          {conversation.peerUsername}
+          <span className="conversation-name">{conversation.peerUsername}</span>
           {trust === 'verified' && (
             <span title="Verified" style={{ color: 'var(--ok)' }}>
               ✓
