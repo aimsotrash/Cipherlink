@@ -59,9 +59,10 @@ export class FakeSignalingHub {
 
   /** A started client that authenticates as `self`. */
   client(self: PeerAddress, options: { now?: () => number } = {}): SignalingClient {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- in the class, `this` is the socket
     const hub = this;
     const Socket = class extends FakeSocket {
-      constructor(_url: string) {
+      constructor() {
         super(hub, self);
       }
     };

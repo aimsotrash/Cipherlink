@@ -63,7 +63,6 @@ export interface AttachmentMetadata {
 export function safeFilename(filename: string, fallback = 'attachment'): string {
   const basename = filename.split(/[/\\]/).pop() ?? '';
   const cleaned = basename
-    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .replace(/^\.+/, '')
     .trim()

@@ -446,7 +446,6 @@ export class MlsEngine {
           senderThumbprint: String(message.inner.identity?.thumbprint ?? ''),
         };
       case 'Commit': {
-        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
         const buffered: DecryptedApplicationMessage[] = (message.inner.bufferedMessages ?? [])
           /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
           .filter((m: any) => m.tag === 'Text')
