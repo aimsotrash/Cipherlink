@@ -121,7 +121,7 @@ and start a conversation by username.
 Run the tests:
 
 ```bash
-npm test             # 138 tests, including the adversarial server suite
+npm test             # 140 tests, including the adversarial server suite
 npm run typecheck
 ```
 

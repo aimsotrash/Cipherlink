@@ -28,9 +28,9 @@ IndexedDB.
 ## Commands
 
 ```bash
-npm test              # full suite (138 tests)
+npm test              # full suite (140 tests)
 npm run test:watch
-npm run typecheck     # every workspace
+npm run typecheck     # every workspace, plus the tests
 npm run build         # production client bundle
 npm run lint
 npm run format
@@ -51,10 +51,14 @@ npx vitest run tests/e2e           # full stack, real server
 Not part of `npm test`, because it needs Playwright and a running dev stack:
 
 ```bash
-npm run dev            # terminal 1
-npm i -D playwright    # once
-npm run test:browser   # terminal 2
+npm run dev                       # terminal 1
+npm i -D playwright               # once
+npx playwright install chromium   # once
+npm run test:browser              # terminal 2
 ```
+
+It opens `http://localhost:5173`; set `SMOKE_BASE_URL` to point it elsewhere,
+and `SMOKE_CHROMIUM_PATH` to use a Chromium other than Playwright's own.
 
 It registers two accounts in separate browser contexts, exchanges messages,
 and asserts both sides derive the same safety number. Worth running before any
