@@ -11,7 +11,12 @@
  *
  *   npm run dev                # in one terminal
  *   npm i -D playwright        # once
+ *   npx playwright install chromium
  *   npm run test:browser       # in another
+ *
+ * SMOKE_BASE_URL overrides the client URL. The default is `localhost`, not
+ * 127.0.0.1: Vite listens on whatever `localhost` resolves to, which can be
+ * ::1 only. SMOKE_CHROMIUM_PATH runs a Chromium other than Playwright's own.
  *
  * This is worth the setup cost. It has already caught two defects the Node
  * suite could not see: form labels that swallowed their help text into the
@@ -20,14 +25,15 @@
  */
 import { chromium } from 'playwright';
 
-const BASE = 'http://127.0.0.1:5173';
+const BASE = process.env.SMOKE_BASE_URL ?? 'http://localhost:5173';
 const shots = process.argv[2] ?? '/tmp/shots';
 // Unique per run: the dev server keeps its database between runs.
 const suffix = Math.random().toString(36).slice(2, 8);
 const ALICE = `alice${suffix}`;
 const BOB = `bob${suffix}`;
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+const executablePath = process.env.SMOKE_CHROMIUM_PATH;
+const browser = await chromium.launch(executablePath ? { executablePath } : {});
 
 async function newClient(name) {
   const context = await browser.newContext();
